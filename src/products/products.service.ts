@@ -1,4 +1,5 @@
 import {
+    BadRequestException,
     Injectable,
     InternalServerErrorException,
     Logger,
@@ -27,8 +28,7 @@ export class ProductsService {
             await this.productRepository.save(product);
             return product;
         } catch (error) {
-            this.logger.error(error);
-            throw new InternalServerErrorException();
+            this.handleErrors(error);
         }
     }
 
@@ -63,8 +63,22 @@ export class ProductsService {
         return product;
     }
 
-    update(id: string, updateProductDto: UpdateProductDto) {
-        return `This action updates a #${id} product`;
+    async update(id: string, updateProductDto: UpdateProductDto) {
+        const product = await this.productRepository.preload({
+            id,
+            ...updateProductDto,
+        });
+
+        if (!product) {
+            throw new NotFoundException(`Product with id ${id} not found`);
+        }
+
+        try {
+            await this.productRepository.save(product);
+            return product;
+        } catch (error) {
+            this.handleErrors(error);
+        }
     }
 
     async remove(id: string) {
@@ -73,5 +87,15 @@ export class ProductsService {
         if (!response.affected) {
             throw new NotFoundException(`Product with id ${id} not found`);
         }
+    }
+
+    private handleErrors(error: any) {
+        this.logger.error(error);
+
+        if (error.code == 23505) {
+            throw new BadRequestException(error.detail);
+        }
+
+        throw new InternalServerErrorException(error.detail);
     }
 }

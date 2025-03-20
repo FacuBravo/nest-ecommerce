@@ -1,4 +1,10 @@
-import { BeforeInsert, Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import {
+    BeforeInsert,
+    BeforeUpdate,
+    Column,
+    Entity,
+    PrimaryGeneratedColumn,
+} from 'typeorm';
 
 @Entity()
 export class Product {
@@ -46,15 +52,27 @@ export class Product {
     })
     gender: string;
 
+    @Column({
+        type: 'text',
+        array: true,
+        default: [],
+    })
+    tags: string[];
+
     @BeforeInsert()
-    checkSlug() {
+    checkSlugInsert() {
         if (!this.slug) {
             this.slug = this.title;
         }
 
+        this.checkSlug()
+    }
+
+    @BeforeUpdate()
+    checkSlug() {
         this.slug = this.slug
-            .toLocaleLowerCase()
-            .replaceAll(' ', '_')
-            .replaceAll(`'`, '');
+        .toLocaleLowerCase()
+        .replaceAll(' ', '_')
+        .replaceAll(`'`, '');
     }
 }
