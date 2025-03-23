@@ -3,8 +3,10 @@ import {
     BeforeUpdate,
     Column,
     Entity,
+    OneToMany,
     PrimaryGeneratedColumn,
 } from 'typeorm';
+import { ProductImage } from './product-image.entity';
 
 @Entity()
 export class Product {
@@ -59,20 +61,26 @@ export class Product {
     })
     tags: string[];
 
+    @OneToMany(() => ProductImage, (productImage) => productImage.product, {
+        cascade: true,
+        eager: true,
+    })
+    images?: ProductImage[];
+
     @BeforeInsert()
     checkSlugInsert() {
         if (!this.slug) {
             this.slug = this.title;
         }
 
-        this.checkSlug()
+        this.checkSlug();
     }
 
     @BeforeUpdate()
     checkSlug() {
         this.slug = this.slug
-        .toLocaleLowerCase()
-        .replaceAll(' ', '_')
-        .replaceAll(`'`, '');
+            .toLocaleLowerCase()
+            .replaceAll(' ', '_')
+            .replaceAll(`'`, '');
     }
 }

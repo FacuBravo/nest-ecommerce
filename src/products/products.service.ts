@@ -7,8 +7,8 @@ import {
 } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { Repository } from 'typeorm';
-import { Product } from './entities/product.entity';
+import { DataSource, Repository } from 'typeorm';
+import { Product, ProductImage } from './entities';
 import { InjectRepository } from '@nestjs/typeorm';
 import { PaginationDto } from 'src/common/dtos/pagination.dto';
 import { validate as isUUID } from 'uuid';
@@ -20,11 +20,22 @@ export class ProductsService {
     constructor(
         @InjectRepository(Product)
         private readonly productRepository: Repository<Product>,
+        @InjectRepository(ProductImage)
+        private readonly productImageRepository: Repository<ProductImage>,
+        private readonly dataSource: DataSource,
     ) {}
 
     async create(createProductDto: CreateProductDto) {
         try {
-            const product = this.productRepository.create(createProductDto);
+            const { images = [], ...productDetails } = createProductDto;
+
+            const product = this.productRepository.create({
+                ...productDetails,
+                images: images.map((image) =>
+                    this.productImageRepository.create({ url: image }),
+                ),
+            });
+
             await this.productRepository.save(product);
             return product;
         } catch (error) {
@@ -35,24 +46,33 @@ export class ProductsService {
     async findAll(paginationDto: PaginationDto) {
         const { limit = 10, offset = 0 } = paginationDto;
 
-        return await this.productRepository.find({
+        const products = await this.productRepository.find({
             take: limit,
             skip: offset,
+            relations: {
+                images: true,
+            },
         });
+
+        return products.map(({ images, ...rest }) => ({
+            ...rest,
+            images: images?.map((i) => i.url) || [],
+        }));
     }
 
-    async findOne(term: string) {
+    private async findOne(term: string) {
         let product: Product | null;
 
         if (isUUID(term)) {
             product = await this.productRepository.findOneBy({ id: term });
         } else {
-            const query = this.productRepository.createQueryBuilder();
+            const query = this.productRepository.createQueryBuilder('p');
             product = await query
                 .where('UPPER(title) = :title or slug = :slug', {
                     slug: term.toLocaleLowerCase(),
                     title: term.toLocaleUpperCase(),
                 })
+                .leftJoinAndSelect('p.images', 'pImgs')
                 .getOne();
         }
 
@@ -63,20 +83,45 @@ export class ProductsService {
         return product;
     }
 
+    async findOnePlain(term: string) {
+        const { images = [], ...rest } = await this.findOne(term);
+
+        return {
+            ...rest,
+            images: images.map((img) => img.url),
+        };
+    }
+
     async update(id: string, updateProductDto: UpdateProductDto) {
+        const { images, ...toUpdate } = updateProductDto;
+
         const product = await this.productRepository.preload({
             id,
-            ...updateProductDto,
+            ...toUpdate,
         });
 
         if (!product) {
             throw new NotFoundException(`Product with id ${id} not found`);
         }
 
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+
         try {
-            await this.productRepository.save(product);
-            return product;
+            if (images) {
+                await queryRunner.manager.delete(ProductImage, { product: id });
+                product.images = images.map((img) =>
+                    this.productImageRepository.create({ url: img }),
+                );
+            }
+
+            await queryRunner.manager.save(product);
+            await queryRunner.commitTransaction();
+
+            return this.findOnePlain(id);
         } catch (error) {
+            queryRunner.rollbackTransaction();
             this.handleErrors(error);
         }
     }
