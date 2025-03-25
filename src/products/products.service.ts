@@ -143,4 +143,13 @@ export class ProductsService {
 
         throw new InternalServerErrorException(error.detail);
     }
+
+    async deleteAllProducts() {
+        try {
+            await this.productRepository.delete({})
+            return 'All products deleted'
+        } catch (error) {
+            this.handleErrors(error)
+        }
+    }
 }
